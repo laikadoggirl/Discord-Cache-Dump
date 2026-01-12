@@ -8,7 +8,6 @@ on:
     branches: [ "master" ]
 
 jobs:
-  # Ubuntu (as in your template)
   build-ubuntu:
     runs-on: ubuntu-latest
     steps:
@@ -16,7 +15,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.23.x'
           cache: true
       - name: Download modules
         run: go mod download
@@ -25,7 +24,6 @@ jobs:
       - name: Test
         run: go test -v ./...
 
-  # Arch Linux job: runs steps inside an Arch container
   build-arch:
     runs-on: ubuntu-latest
     container: archlinux:latest
@@ -38,8 +36,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.23.x'
           cache: true
+      - name: Mark workspace safe for Git (fix 'dubious ownership')
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          # Or allow any path in CI (broader):
+          # git config --global --add safe.directory '*'
       - name: Download modules
         run: go mod download
       - name: Build
