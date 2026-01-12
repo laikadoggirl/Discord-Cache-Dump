@@ -33,6 +33,29 @@ var homePath string
 var sudoerUID int
 var unreadableResCount int64
 
+// Resolve per-OS app dir name (Vesktop on macOS is "Vesktop")
+func resolveBuildDir(dir string) string {
+	if platform == "darwin" && strings.EqualFold(dir, "vesktop") {
+		return "Vesktop"
+	}
+	return dir
+}
+
+// Resolve per-build cache path template (Vesktop may not use "sessionData")
+func resolveCacheTemplate(buildDir string, base map[string]string) string {
+	if strings.EqualFold(buildDir, "vesktop") {
+		switch platform {
+		case "linux":
+			return "%s/.config/%s/sessionData/Cache/Cache_Data/"
+		case "darwin":
+			return "%s/Library/Application Support/%s/Cache/Cache_Data/"
+		case "windows":
+			return "%s\\AppData\\Roaming\\%s\\Cache\\Cache_Data\\"
+		}
+	}
+	return base[platform]
+}
+
 func main() {
 
 	fmt.Println()
@@ -43,6 +66,7 @@ func main() {
 		1: "PTB",
 		2: "Canary",
 		3: "Development",
+		4: "Vesktop",
 	}
 	// Discord client build folder names
 	discordBuildDir := map[int]string{
@@ -50,8 +74,9 @@ func main() {
 		1: "discordptb",
 		2: "discordcanary",
 		3: "discorddevelopment",
+		4: "vesktop",
 	}
-	// Cache paths for each platform
+	// Cache paths for each platform (default Discord paths)
 	cachePath := map[string]string{
 		"linux":   "%s/.config/%s/Cache/Cache_Data/",
 		"darwin":  "%s/Library/Application Support/%s/Cache/Cache_Data/",
@@ -73,7 +98,7 @@ func main() {
 	}
 
 	var opts struct {
-		Build          string `short:"b" long:"build" description:"Select build type: stable, ptb, canary, development"`
+		Build          string `short:"b" long:"build" description:"Select build type: stable, ptb, canary, development, vesktop"`
 		Flatpak        bool   `short:"f" long:"flatpak" description:"Target flatpak builds (Linux only)"`
 		Noninteractive bool   `short:"n" long:"noninteractive" description:"Non-interactive -- no 'enter' key required"`
 	}
@@ -91,7 +116,7 @@ func main() {
 
 	user, err := user.Current()
 	if err != nil {
-		fmt.Printf("[ERROR] Failed to obtain user: %s%s", err, DCDUtils.ExitNewLine())
+		fmt.Printf("[ERROR] Failed to obtain user: %v%s", err, DCDUtils.ExitNewLine())
 		os.Exit(6)
 	} else {
 		if platform != "windows" {
@@ -201,10 +226,12 @@ func main() {
 		filePathRaw := cachePath[platform]
 		if flatpakMode {
 			filePathRaw = DCDUtils.FlatpakPath(discordBuildDir[i])
+		} else {
+			filePathRaw = resolveCacheTemplate(discordBuildDir[i], cachePath)
 		}
-		filePath := fmt.Sprintf(filePathRaw, homePath, discordBuildDir[i])
+		filePath := fmt.Sprintf(filePathRaw, homePath, resolveBuildDir(discordBuildDir[i]))
 		if _, err := os.Stat(filePath); !os.IsNotExist(err) {
-			fmt.Printf("Found: Discord %s\n", discordBuildName[i])
+			fmt.Printf("Found: %s\n", discordBuildName[i])
 			pathStatus[i] = true
 		} else {
 			pathStatus[i] = false
@@ -217,11 +244,13 @@ func main() {
 			filePathRaw := cachePath[platform]
 			if flatpakMode {
 				filePathRaw = DCDUtils.FlatpakPath(discordBuildDir[i])
+			} else {
+				filePathRaw = resolveCacheTemplate(discordBuildDir[i], cachePath)
 			}
-			filePath := fmt.Sprintf(filePathRaw, homePath, discordBuildDir[i])
+			filePath := fmt.Sprintf(filePathRaw, homePath, resolveBuildDir(discordBuildDir[i]))
 			cacheListing, err := os.ReadDir(filePath)
 			if err != nil {
-				fmt.Printf("[ERROR] Unable to read directory for Discord %s%s", discordBuildName[i], DCDUtils.ExitNewLine())
+				fmt.Printf("[ERROR] Unable to read directory for %s%s", discordBuildName[i], DCDUtils.ExitNewLine())
 				os.Exit(2)
 			}
 			// Go through the list of files present in a cache directory
@@ -231,9 +260,9 @@ func main() {
 					cachedFile[i][k] = v.Name()
 					overallSize = DCDUtils.SizeStore(filePath+v.Name(), overallSize)
 				}
-				fmt.Printf("Discord %s :: found %d cached files\n", discordBuildName[i], len(cacheListing))
+				fmt.Printf("%s :: found %d cached files\n", discordBuildName[i], len(cacheListing))
 			} else {
-				fmt.Printf("Discord %s :: cache empty, skipping\n", discordBuildName[i])
+				fmt.Printf("%s :: cache empty, skipping\n", discordBuildName[i])
 				pathStatus[i] = false
 			}
 		}
@@ -247,7 +276,7 @@ func main() {
 		}
 	}
 	if pathStatusSuccessCount == 0 {
-		fmt.Printf("No cache found -- ensure Discord is installed and had been ran at least once%s", DCDUtils.ExitNewLine())
+		fmt.Printf("No cache found -- ensure the client is installed and has been run at least once%s", DCDUtils.ExitNewLine())
 		os.Exit(0)
 	} else {
 		fmt.Print("\n")
@@ -263,7 +292,7 @@ func main() {
 	if spareStorage <= overallSize {
 		remainingStorage := spareStorage - overallSize
 		requiredSpace := strings.Replace(fmt.Sprintf("%v", remainingStorage), "-", "", -1)
-		fmt.Print("[ERROR] Insufficient storage where program is being ran\n")
+		fmt.Print("[ERROR] Insufficient storage where program is being run\n")
 		fmt.Printf("[...] %s bytes need sparing%s", requiredSpace, DCDUtils.ExitNewLine())
 		os.Exit(1)
 	} else {
@@ -285,7 +314,7 @@ func main() {
 		}
 	}
 
-	// Create any Discord client directories that are required
+	// Create any client directories that are required
 	for i := 0; i < len(discordBuildDir); i++ {
 		if len(cachedFile[i]) > 0 {
 			if _, err := os.Stat(dumpDir + "/" + timeDateStamp + "/" + discordBuildName[i] + "/"); os.IsNotExist(err) {
@@ -296,14 +325,16 @@ func main() {
 			}
 
 			// Copy the files over
-			fmt.Printf("Copying %d files from Discord %s ...\n", len(cachedFile[i]), discordBuildName[i])
+			fmt.Printf("Copying %d files from %s ...\n", len(cachedFile[i]), discordBuildName[i])
 			for it := 0; it < len(cachedFile[i]); it++ {
 				// Build the paths to use during the copy operation
 				filePathRaw := cachePath[platform]
 				if flatpakMode {
 					filePathRaw = DCDUtils.FlatpakPath(discordBuildDir[i])
+				} else {
+					filePathRaw = resolveCacheTemplate(discordBuildDir[i], cachePath)
 				}
-				fromPath := fmt.Sprintf(filePathRaw, homePath, discordBuildDir[i])
+				fromPath := fmt.Sprintf(filePathRaw, homePath, resolveBuildDir(discordBuildDir[i]))
 				toPath := dumpDir + "/" + timeDateStamp + "/" + discordBuildName[i] + "/" + cachedFile[i][it]
 				// Copying the files one-by-one
 				unreadableRes = DCDUtils.CopyFile(fromPath+cachedFile[i][it], toPath, sudoerUID, unreadableRes)
@@ -311,13 +342,13 @@ func main() {
 
 			// Unable to copy client-critical cache
 			if unreadableRes > 0 {
-				fmt.Printf("[NOTICE] Cannot read client-critical cache while Discord %s is running\n", discordBuildName[i])
+				fmt.Printf("[NOTICE] Cannot read client-critical cache while %s is running\n", discordBuildName[i])
 				fmt.Printf("[...] Unable to read %d client-critical cache file(s)\n", unreadableRes)
 				unreadableResCount = int64(len(cachedFile[i])) - unreadableRes
 				if unreadableResCount < 0 {
 					unreadableResCount = 0
 				}
-				fmt.Printf("[...] Actually copied %d cache files from Discord %s\n", unreadableResCount, discordBuildName[i])
+				fmt.Printf("[...] Actually copied %d cache files from %s\n", unreadableResCount, discordBuildName[i])
 			} else {
 				unreadableResCount = int64(len(cachedFile[i]))
 			}
@@ -330,7 +361,7 @@ func main() {
 
 	for i := 0; i < len(discordBuildDir); i++ {
 		if len(cachedFile[i]) > 0 {
-			fmt.Printf("Changing file extensions for Discord %s cache ...\n", discordBuildName[i])
+			fmt.Printf("Changing file extensions for %s cache ...\n", discordBuildName[i])
 			var identificationCount = 0
 			for it := 0; it < len(cachedFile[i]); it++ {
 				cachedFilePath := dumpDir + "/" + timeDateStamp + "/" + discordBuildName[i] + "/" + cachedFile[i][it]
@@ -344,7 +375,7 @@ func main() {
 					}
 				}
 			}
-			fmt.Printf("%d out of %d identified for Discord %s\n\n", identificationCount, unreadableResCount, discordBuildName[i])
+			fmt.Printf("%d out of %d identified for %s\n\n", identificationCount, unreadableResCount, discordBuildName[i])
 		}
 	}
 

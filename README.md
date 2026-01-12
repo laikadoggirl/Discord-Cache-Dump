@@ -80,6 +80,7 @@ In order to compile the tool, there are a few things required to get it set up.
 ## Tested
 
 -   Windows 10
+-   Arch Linux (GNU/Linux)
 -   Ubuntu (GNU/Linux)
 -   Kali Linux (GNU/Linux)
 -   Solus (GNU/Linux)
